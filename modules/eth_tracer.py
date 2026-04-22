@@ -1,61 +1,40 @@
 #!/usr/bin/env python3
-"""Ethereum Transaction Tracer - Using Etherscan public API"""
+"""Ethereum Transaction Tracer using public APIs"""
 import requests
 
-ETHERSCAN_API = "https://api.etherscan.io/api"
-
 class ETHTracer:
-    def __init__(self, address, api_key=""):
-        self.address = address
-        self.api_key = api_key or "YourApiKeyToken"  # Free tier works for basic queries
+    BASE_URL = "https://api.etherscan.io/api"
 
-    def get_balance(self):
+    def trace_address(self, address):
+        print(f"[*] Tracing ETH address: {address}")
+        result = {"address": address, "coin": "ETH"}
         try:
-            params = {"module": "account", "action": "balance",
-                      "address": self.address, "tag": "latest", "apikey": self.api_key}
-            r = requests.get(ETHERSCAN_API, params=params, timeout=10)
+            # Balance check via public API (no API key needed for basic)
+            r = requests.get(
+                f"https://eth.llamarpc.com",
+                json={"jsonrpc": "2.0", "method": "eth_getBalance",
+                      "params": [address, "latest"], "id": 1},
+                timeout=10
+            )
             if r.status_code == 200:
                 data = r.json()
-                wei = int(data.get("result", 0))
-                eth = wei / 10**18
-                print(f"[+] Balance: {eth:.4f} ETH")
-                return eth
-        except Exception as e:
-            print(f"[-] Balance error: {e}")
-        return 0
+                balance_hex = data.get("result", "0x0")
+                balance_eth = int(balance_hex, 16) / 1e18
+                result["balance_eth"] = round(balance_eth, 6)
+                print(f"[+] ETH Balance: {balance_eth:.6f} ETH")
 
-    def get_transactions(self, limit=10):
-        try:
-            params = {"module": "account", "action": "txlist",
-                      "address": self.address, "startblock": 0,
-                      "endblock": 99999999, "page": 1, "offset": limit,
-                      "sort": "desc", "apikey": self.api_key}
-            r = requests.get(ETHERSCAN_API, params=params, timeout=10)
-            if r.status_code == 200:
-                txs = r.json().get("result", [])
-                result = []
-                for tx in txs[:limit]:
-                    val_eth = int(tx.get("value", 0)) / 10**18
-                    result.append({
-                        "txid": tx.get("hash","")[:16] + "...",
-                        "from": tx.get("from",""),
-                        "to": tx.get("to",""),
-                        "value_eth": round(val_eth, 6),
-                        "block": tx.get("blockNumber","")
-                    })
-                    print(f"[+] TX: {val_eth:.4f} ETH block={tx.get('blockNumber')}")
-                return result
-        except Exception as e:
-            print(f"[-] TX error: {e}")
-        return []
+            # Transaction count
+            r2 = requests.get(
+                "https://eth.llamarpc.com",
+                json={"jsonrpc": "2.0", "method": "eth_getTransactionCount",
+                      "params": [address, "latest"], "id": 1},
+                timeout=10
+            )
+            if r2.status_code == 200:
+                count_hex = r2.json().get("result", "0x0")
+                result["tx_count"] = int(count_hex, 16)
+                print(f"[+] ETH TX Count: {result['tx_count']}")
 
-    def trace(self):
-        print(f"[*] Tracing ETH address: {self.address}")
-        balance = self.get_balance()
-        txs = self.get_transactions()
-        return {
-            "chain": "ETH",
-            "address": self.address,
-            "balance_eth": balance,
-            "transactions": txs
-        }
+        except Exception as e:
+            result["error"] = str(e)
+        return result
