@@ -1,45 +1,58 @@
 #!/usr/bin/env python3
 from datetime import datetime
+import json
 
-class CryptoReport:
-    def __init__(self, address, chain, results):
-        self.address = address
-        self.chain = chain
+class CryptoTraceReport:
+    def __init__(self, target, coin, results):
+        self.target = target
+        self.coin = coin
         self.results = results
 
     def save(self, filename):
-        txs = self.results.get("transactions", {})
-        analysis = self.results.get("analysis", {})
-        tx_list = txs.get("transactions", []) if isinstance(txs, dict) else []
+        addr_data = self.results.get("address", {})
+        tx_data = self.results.get("transaction", {})
+        risk_data = self.results.get("risk", {})
 
-        tx_rows = "".join(
-            f"<tr><td>{t.get('txid','')}</td><td>{t.get('value_eth', t.get('value_out',''))}</td><td>{t.get('block','')}</td></tr>"
-            for t in tx_list[:20]
+        risk_color = {"CRITICAL": "#ef4444", "HIGH": "#f97316",
+                      "MEDIUM": "#facc15", "LOW": "#22c55e"}.get(risk_data.get("risk_level","LOW"), "#888")
+
+        addr_rows = "".join(
+            f"<tr><td>{k}</td><td>{v}</td></tr>"
+            for k,v in addr_data.items() if k not in ["inputs","outputs","error"]
         )
-        findings = "".join(f"<li class='{f[\"severity\"].lower()}'>{f['indicator']}</li>" for f in analysis.get("findings",[]))
 
-        risk = analysis.get("risk_level","UNKNOWN")
-        rcolor = {"LOW":"#22c55e","MEDIUM":"#f59e0b","HIGH":"#ef4444"}.get(risk,"#888")
+        outputs_html = ""
+        for out in tx_data.get("outputs", []):
+            outputs_html += f"<tr><td>{out.get('address','')}</td><td>{out.get('value_btc','')}</td></tr>"
+
+        flags_html = "".join(f"<li>{f}</li>" for f in risk_data.get("flags", []))
 
         html = f"""<!DOCTYPE html><html><head><title>CryptoTrace Report</title>
-<style>body{{font-family:Arial;background:#0f0f1a;color:#c8c8ff;padding:20px}}
-h1{{color:#a78bfa}}h2{{color:#c4b5fd}}
-.card{{background:#1e1b33;border-radius:8px;padding:15px;margin:10px 0}}
-table{{width:100%;border-collapse:collapse}}td,th{{padding:7px;border:1px solid #2d2b4e}}
-th{{background:#2d2b4e}}.low{{color:#22c55e}}.medium{{color:#f59e0b}}.high{{color:#ef4444}}
-</style></head>
-<body>
-<h1>CryptoTrace Investigation Report</h1>
-<p>Address: <code>{self.address}</code> | Chain: <b>{self.chain.upper()}</b> | {datetime.now().strftime('%Y-%m-%d %H:%M')}</p>
+<style>
+body{{font-family:Arial;background:#0f0a1e;color:#e2e0f0;padding:20px}}
+h1{{color:#a78bfa}} h2{{color:#c4b5fd}}
+.card{{background:#1e1b2e;border-radius:8px;padding:15px;margin:10px 0;border-left:4px solid #a78bfa}}
+table{{width:100%;border-collapse:collapse}} td,th{{padding:7px;border:1px solid #2d2b45}}
+th{{background:#16132e}}
+.risk{{font-size:1.5em;font-weight:bold;color:{risk_color}}}
+</style></head><body>
+<h1>🔍 CryptoTrace Report</h1>
+<p>Target: <code>{self.target}</code> | Coin: {self.coin.upper()} | {datetime.now().strftime('%Y-%m-%d %H:%M')}</p>
+
 <div class="card">
-  <h2>Wallet Info</h2>
-  <p>Balance: {txs.get('balance_eth', txs.get('balance','N/A'))} {self.chain.upper()} | TX Count: {txs.get('tx_count', len(tx_list))}</p>
-  <p>Risk Level: <span style="color:{rcolor};font-weight:bold">{risk}</span> ({analysis.get('risk_score',0)}/100)</p>
+  <h2>Risk Assessment</h2>
+  <p class="risk">{risk_data.get('risk_level','N/A')}</p>
+  <ul>{flags_html}</ul>
 </div>
-<div class="card"><h2>Risk Indicators</h2><ul>{findings if findings else '<li>No suspicious indicators found</li>'}</ul></div>
-<div class="card"><h2>Recent Transactions</h2>
-<table><tr><th>TxID</th><th>Value</th><th>Block</th></tr>{tx_rows if tx_rows else '<tr><td colspan=3>No transactions</td></tr>'}</table>
-</div></body></html>"""
+
+<div class="card">
+  <h2>Address Intelligence</h2>
+  <table>{addr_rows}</table>
+</div>
+
+{f'<div class="card"><h2>Transaction Outputs</h2><table><tr><th>Address</th><th>BTC</th></tr>{outputs_html}</table></div>' if outputs_html else ''}
+</body></html>"""
+
         with open(filename, "w") as f:
             f.write(html)
-        print(f"[+] Saved: {filename}")
+        print(f"[+] Report saved: {filename}")
